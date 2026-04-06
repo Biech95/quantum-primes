@@ -1,0 +1,430 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage[colorlinks=false,pdfborder={0 0 0}]{hyperref}
+\usepackage{enumitem}
+\usepackage{graphicx}
+
+\newtheorem{definition}{Definition}
+\newtheorem{proposition}{Proposition}
+\newtheorem{theorem}{Theorem}
+\newtheorem{remark}{Remark}
+\newtheorem{corollary}{Corollary}
+
+\title{Quantum Primes:\\Irreducible Primitives for Hardware-Agnostic\\Quantum Compilation}
+\author{Michael Bieg\\
+\textit{Independent Researcher}\\
+\texttt{Bieg.Michael@web.de}}
+\date{April 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Every quantum compiler faces the same problem: decomposing algorithms into a universal gate set (typically CNOT$+$R$_z$), then translating to hardware-native gates via ad hoc rewrite rules. The universal set is chosen for mathematical convenience, not physical relevance, and the translation step destroys algorithmic structure. We introduce \textbf{Quantum Primes}---12 irreducible quantum computational primitives (Q1--Q12), 8 unitary and 4 non-unitary, from which all known quantum algorithms can be composed. Unlike universal gate sets, quantum primes are defined by their computational role, not their matrix representation, enabling structure-preserving compilation across hardware platforms. We factorize 15 major quantum algorithms (Shor, Grover, VQE, QAOA, QPE, HHL, QEC, QML, quantum simulation, QKD, random walks, amplitude estimation, teleportation, and GHZ preparation) into their quantum prime components. For each of 6 hardware platforms (IBM, Google, IonQ, Quantinuum, Xanadu, neutral atoms), we define the native realization of each prime, enabling principled cross-platform compilation. We show that quantum measurement suffers from even worse information utilization than classical analog computation ($0.001\%$ for 10 qubits vs.\ $0.12\%$ for classical races) and that classical shadow tomography~[1] provides the quantum equivalent of multi-computation---extracting $M$ observables from $O(\log M)$ measurements. The quantum prime framework unifies with our prior work on classical computational primes~[2], yielding a single meta-framework for compilation across classical analog, classical digital, and quantum domains.
+\end{abstract}
+
+\section{Introduction}
+
+Quantum compilation---translating a high-level quantum algorithm into executable instructions on physical hardware---is solved in practice but lacks a principled theoretical foundation. The standard pipeline is:
+
+\begin{enumerate}[leftmargin=*]
+\item Decompose the algorithm into a universal gate set (e.g., \{CNOT, $R_z$, $R_y$\}).
+\item Optimize at the universal level (gate cancellation, commutation).
+\item Rebase to hardware-native gates (e.g., ECR for IBM, fSim for Google).
+\item Route for hardware topology (insert SWAPs).
+\item Schedule and calibrate.
+\end{enumerate}
+
+This pipeline has two fundamental weaknesses. First, the universal gate set is \textit{arbitrary}---chosen for mathematical convenience (the Solovay-Kitaev theorem guarantees universality for any sufficiently rich set~\cite{solovay}), not because CNOT$+R_z$ captures the computational structure of quantum algorithms. Second, the rebase step is \textit{lossy}: a QFT becomes an undifferentiated soup of CNOT and $R_z$ gates, losing the information that it was a Fourier transform.
+
+We propose an alternative: define a set of \textit{irreducible quantum computational primitives}---quantum primes---that capture the computational \textit{role} of each operation (superposition, entanglement, phase encoding, etc.) rather than its matrix representation. Compilation then proceeds as factorization into primes, followed by principled mapping to hardware-native realizations.
+
+This work extends our classical computational primes framework~\cite{bieg_primes}, which identified 12 irreducible classical operations (accumulation, scaling, exponential, etc.) with physical analog implementations, enabling systematic partitioning of neural networks across analog and digital domains. The structural parallel is exact:
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+& Classical & Quantum \\
+\midrule
+Primitives & 12 physical primes & 12 quantum primes \\
+Decomposition & Algorithm $\to$ primes & Algorithm $\to$ Q-primes \\
+Domains & Analog vs.\ digital & Ion trap vs.\ superconducting vs.\ $\ldots$ \\
+Transitions & ADC/DAC & SWAP gates \\
+Multi-comp & 5 outputs / 1 race & $M$ observables / $O(\log M)$ measurements \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Contributions}
+
+\begin{enumerate}[leftmargin=*]
+\item \textbf{Quantum Primes} (Q1--Q12): 8 unitary and 4 non-unitary irreducible primitives, with a completeness argument (\S\ref{sec:primes}).
+\item \textbf{Algorithm factorization}: 15 quantum algorithms decomposed into their prime structure (\S\ref{sec:factorization}).
+\item \textbf{Hardware profiles}: Native realizations of each prime on 6 platforms (\S\ref{sec:hardware}).
+\item \textbf{Quantum multi-computation}: Classical shadows as the quantum analog of multi-observable extraction, with information utilization analysis (\S\ref{sec:multicomp}).
+\item \textbf{Unified framework}: A single meta-framework spanning classical analog, classical digital, and quantum computation (\S\ref{sec:unified}).
+\end{enumerate}
+
+\section{Quantum Primes}
+\label{sec:primes}
+
+\begin{definition}[Quantum Prime]
+An operation $Q$ is a quantum prime if (a)~it plays an irreducible computational role that cannot be replicated by composing other primes, and (b)~it appears as a necessary component in at least two distinct quantum algorithms.
+\end{definition}
+
+We identify 12 quantum primes, divided into 8 unitary (reversible) and 4 non-unitary (irreversible) operations.
+
+\subsection{Unitary Primes (Q1--Q8)}
+
+\begin{table}[h]
+\centering
+\caption{The 12 quantum primes. Unitary (Q1--Q8) and non-unitary (Q9--Q12).}
+\label{tab:qprimes}
+\footnotesize
+\begin{tabular}{clllc}
+\toprule
+ID & Name & Role & Classical analog & Algos \\
+\midrule
+Q1 & Superposition & Uniform amplitude spreading & P1 ($\Sigma$) & 7/15 \\
+Q2 & Phase Encoding & Information $\to$ relative phases & P2 ($\times c$) & 7/15 \\
+Q3 & Entanglement & Non-separable correlations & P11 ($\times$) & 7/15 \\
+Q4 & Controlled Cond. & Operation gated by quantum state & P5 (argmax) & 7/15 \\
+Q5 & Param.\ Rotation & Continuous tunable rotation & P6 ($\sigma$) & 5/15 \\
+Q6 & Reflection & Inversion about subspace & P12 ($1/x$) & 3/15 \\
+Q7 & Basis Transform & Conjugate representation change & P3/P4 ($e^x$/ln) & 10/15 \\
+Q8 & Hamiltonian Evol. & Continuous time evolution & P8 ($\int$) & 5/15 \\
+\midrule
+Q9 & Measurement & Projective collapse & P7 ($\theta$) & 14/15 \\
+Q10 & Classical Feedback & Classical control of quantum ops & P9 ($d/dt$) & 6/15 \\
+Q11 & Reset & Non-unitary re-initialization & P10 ($\xi$) & 1/15 \\
+Q12 & Post-Selection & Conditional continuation & --- & 3/15 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Q1 (Superposition):} Creates equal-weight amplitude distributions from basis states. The Hadamard gate $H$ is the canonical single-qubit realization; multi-qubit uniform superposition is $H^{\otimes n}$. This is the raw resource of quantum parallelism---without it, quantum algorithms reduce to classical.
+
+\textbf{Q2 (Phase Encoding):} Imprints computational information into relative phases: $|x\rangle \to e^{i\phi(x)}|x\rangle$. Phase kickback, oracle queries, and diagonal unitaries all belong to this prime. Amplitudes carry probability; \textit{phases carry computation}.
+
+\textbf{Q3 (Entanglement):} Creates non-separable states that have no classical analog. CNOT, CZ, and any operation producing states where $\rho_{AB} \neq \rho_A \otimes \rho_B$. The resource enabling exponential state spaces and quantum advantage.
+
+\textbf{Q4 (Controlled Conditionality):} Applies an operation on one register conditional on the quantum state of another: controlled-$U$, Toffoli, and their generalizations. Enables subroutine calls, quantum arithmetic, and conditional dynamics.
+
+\textbf{Q5 (Parameterized Rotation):} Continuous, tunable rotations $R_x(\theta)$, $R_y(\theta)$, $R_z(\theta)$, and multi-qubit parameterized gates. The knob that variational/hybrid algorithms (VQE, QAOA, QML) turn to navigate the optimization landscape.
+
+\textbf{Q6 (Reflection):} Inversion about a subspace or state: $2|\psi\rangle\langle\psi| - I$. The engine of amplitude amplification---the only known mechanism for quadratic speedups in unstructured search (Grover).
+
+\textbf{Q7 (Basis Transformation):} Conjugation between representations: QFT maps computational$\leftrightarrow$Fourier basis; Hadamard maps $Z\leftrightarrow X$ eigenbasis. Analogous to classical exp/log (domain change). The most frequently used prime (10/15 algorithms).
+
+\textbf{Q8 (Hamiltonian Evolution):} Continuous-time evolution $e^{-iHt}$ under a physical Hamiltonian. All discrete gates are approximations to this---it is how nature actually computes. Trotterization discretizes Q8 into products of simpler Q8 instances.
+
+\subsection{Non-Unitary Primes (Q9--Q12)}
+
+\textbf{Q9 (Measurement):} Projective collapse extracting classical information. Irreversible, destroys superposition. The \textit{only} way to extract information from a quantum computer. Appears in 14 of 15 algorithms---the most universal prime.
+
+\textbf{Q10 (Classical Feedback):} Classical processing directing quantum operations. Parameter optimization in VQE/QAOA, syndrome decoding in QEC, conditional corrections in teleportation. Defines the hybrid quantum-classical paradigm.
+
+\textbf{Q11 (Reset):} Non-unitary re-initialization of a qubit to $|0\rangle$. Thermodynamically irreversible (Landauer's principle). Required for repeated syndrome extraction in QEC and any long-running quantum computation.
+
+\textbf{Q12 (Post-Selection):} Conditional continuation of computation based on a mid-circuit measurement outcome. Effectively enables non-linear transformations of quantum states. Has \textit{no classical analog}---post-selected quantum computing (PostBQP) equals PP, a dramatically more powerful complexity class than BQP.
+
+\subsection{Completeness}
+
+\begin{proposition}
+Every quantum algorithm implementable on a gate-based quantum computer with classical control can be expressed as a composition of Q1--Q12.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+Q1, Q3, Q5, and Q7 together generate all of SU($2^n$) (universality via Hadamard + parameterized rotations + entangling gates). Q2 and Q4 are compositional patterns within this universal set but play irreducible \textit{computational roles} not captured by the others. Q6 is the unique amplitude-manipulation mechanism (reflection). Q8 is the continuous-time primitive from which all discrete gates derive. Q9--Q12 cover all non-unitary operations: measurement, classical control, reset, and conditional branching. \qed
+\end{proof}
+
+\subsection{Why Not Fewer?}
+
+Each prime is operationally irreducible:
+\begin{itemize}[leftmargin=*]
+\item Q1 (Superposition) $\neq$ Q7 (Basis Transform): $H$ is both, but QFT is not superposition creation, and superposition over a subset is not a basis change.
+\item Q2 (Phase Encoding) $\neq$ Q5 (Rotation): phase gates are diagonal (no amplitude change); rotations change amplitudes. Phase gates commute with computational-basis measurement; rotations do not.
+\item Q3 (Entanglement) $\neq$ Q4 (Controlled): not all controlled operations create entanglement; not all entanglement requires controlled gates (Q8 can entangle).
+\item Q6 (Reflection) is not Q1$+$Q2: reflection requires knowledge of a specific subspace and is state-dependent.
+\item Q12 (Post-Selection) has no classical analog and no unitary equivalent.
+\end{itemize}
+
+\section{Factorization of Quantum Algorithms}
+\label{sec:factorization}
+
+\begin{table}[h]
+\centering
+\caption{Prime factorization of 15 quantum algorithms. $\bullet$ = prime is used.}
+\label{tab:factorization}
+\footnotesize
+\begin{tabular}{l cccccccc cccc}
+\toprule
+& \multicolumn{8}{c}{Unitary} & \multicolumn{4}{c}{Non-unitary} \\
+\cmidrule(lr){2-9} \cmidrule(lr){10-13}
+Algorithm & Q1 & Q2 & Q3 & Q4 & Q5 & Q6 & Q7 & Q8 & Q9 & Q10 & Q11 & Q12 \\
+\midrule
+Shor & $\bullet$ & $\bullet$ & & $\bullet$ & & & $\bullet$ & & $\bullet$ & & & \\
+Grover & $\bullet$ & $\bullet$ & & & & $\bullet$ & $\bullet$ & & $\bullet$ & & & \\
+VQE & & & $\bullet$ & & $\bullet$ & & $\bullet$ & $\bullet$ & $\bullet$ & $\bullet$ & & \\
+QAOA & $\bullet$ & $\bullet$ & & & $\bullet$ & & & $\bullet$ & $\bullet$ & $\bullet$ & & \\
+QPE & $\bullet$ & $\bullet$ & & $\bullet$ & & & $\bullet$ & & $\bullet$ & & & \\
+HHL & & $\bullet$ & & $\bullet$ & $\bullet$ & & $\bullet$ & $\bullet$ & $\bullet$ & & & $\bullet$ \\
+QEC & & & $\bullet$ & $\bullet$ & & & & & $\bullet$ & $\bullet$ & $\bullet$ & $\bullet$ \\
+QML & & & $\bullet$ & & $\bullet$ & & $\bullet$ & $\bullet$ & $\bullet$ & $\bullet$ & & \\
+Simulation & & & & & & & & $\bullet$ & $\bullet$ & & & \\
+QKD & $\bullet$ & & $\bullet$ & & & & $\bullet$ & & $\bullet$ & $\bullet$ & & \\
+Random Walks & $\bullet$ & & & $\bullet$ & & & $\bullet$ & & $\bullet$ & & & \\
+Amp.\ Estimation & & $\bullet$ & & & & $\bullet$ & $\bullet$ & & $\bullet$ & & & \\
+Approx.\ Counting & & $\bullet$ & & & & $\bullet$ & $\bullet$ & & $\bullet$ & $\bullet$ & & \\
+Teleportation & & & $\bullet$ & $\bullet$ & & & $\bullet$ & & $\bullet$ & $\bullet$ & & $\bullet$ \\
+GHZ Preparation & $\bullet$ & & $\bullet$ & $\bullet$ & & & & & & & & \\
+\midrule
+\textbf{Total} & \textbf{7} & \textbf{7} & \textbf{7} & \textbf{7} & \textbf{5} & \textbf{3} & \textbf{10} & \textbf{5} & \textbf{14} & \textbf{6} & \textbf{1} & \textbf{3} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Key observations:}
+
+\begin{itemize}[leftmargin=*]
+\item Q9 (Measurement) is nearly universal: 14/15 algorithms. The sole exception---GHZ preparation---is a state preparation step that requires measurement in any practical use.
+\item Q7 (Basis Transformation) appears in 10/15 algorithms, making it the most used unitary prime. Quantum algorithms fundamentally rely on switching between conjugate representations.
+\item The ``Big Four'' unitary primes---Q1, Q2, Q3, Q4---each appear in 7/15 algorithms. They form the backbone of quantum computation.
+\item Q5 (Parameterized Rotation) and Q10 (Classical Feedback) always co-occur: they define the hybrid variational paradigm (VQE, QAOA, QML).
+\item Q11 (Reset) appears only in QEC---rare but essential for fault tolerance.
+\item Q6 (Reflection) appears only in Grover-family algorithms (3/15)---the most specialized prime.
+\end{itemize}
+
+\section{Hardware Profiles}
+\label{sec:hardware}
+
+\begin{table*}[t]
+\centering
+\caption{Native realization of each quantum prime on 6 hardware platforms. $\checkmark$ = natively supported, $\circ$ = requires decomposition, --- = not applicable.}
+\label{tab:hardware}
+\footnotesize
+\begin{tabular}{clllllll}
+\toprule
+& Prime & IBM Heron & Google Willow & IonQ Forte & Quantinuum H2 & Xanadu & Neutral Atom \\
+\midrule
+Q1 & Superposition & SX gate & PhasedXZ & GPi2 & U1q & Beam splitter & $R_x$ (global) \\
+Q2 & Phase Encoding & $R_z$ (virtual) & $R_z$ (virtual) & $R_z$ (virtual) & $R_z$ (virtual) & Phase shift & $R_z$ (local) \\
+Q3 & Entanglement & ECR / RZZ($\theta$) & fSim($\theta,\phi$) & XX($\theta$) & ZZPhase($\theta$) & Squeeze+BS & CZ (Rydberg) \\
+Q4 & Controlled & ECR $+$ 1Q & fSim $+$ 1Q & XX $+$ 1Q & ZZ $+$ 1Q & KLM & CZ $+$ 1Q \\
+Q5 & Param.\ Rotation & $R_z(\theta)$, SX & PhasedXZ($\theta$) & GPi($\phi$), GPi2 & U1q($\theta,\phi$) & Phase($\theta$) & $R_{x,y,z}(\theta)$ \\
+Q6 & Reflection & Q1$+$Q2$+$Q3 & Q1$+$Q2$+$Q3 & Q1$+$Q2$+$Q3 & Q1$+$Q2$+$Q3 & Q1$+$Q2$+$Q3 & Q1$+$Q2$+$Q3 \\
+Q7 & Basis Transform & SX $+$ $R_z$ & PhasedXZ & GPi2 $+$ $R_z$ & U1q & BS network & $R_{x,y}$ $+$ $R_z$ \\
+Q8 & Ham.\ Evolution & Trotter (Q3$+$Q5) & fSim (native!) & XX($\theta$) (native) & ZZPhase (native) & Squeeze (native) & Rydberg (native!) \\
+\midrule
+Q9 & Measurement & $\checkmark$ & $\checkmark$ & $\checkmark$ & $\checkmark$ & Photon detect. & $\checkmark$ \\
+Q10 & Classical FB & Dynamic circuits & $\circ$ & $\checkmark$ & $\checkmark$ & $\circ$ & $\circ$ \\
+Q11 & Reset & Mid-circuit & $\circ$ & $\checkmark$ & $\checkmark$ & N/A & $\circ$ \\
+Q12 & Post-Selection & Dynamic circuits & $\circ$ & $\checkmark$ & $\checkmark$ & Heralding & $\circ$ \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\subsection{Native Gate Sets}
+
+Each hardware platform provides different native realizations of the quantum primes:
+
+\textbf{IBM Heron} (superconducting transmon): ECR (echoed cross-resonance) or RZZ($\theta$) as the native entangling gate (Q3). Single-qubit via $R_z$ (virtual, zero-error) and SX ($\sqrt{X}$, physical pulse). $R_z$ is ``free'' because it is implemented by frame tracking in software, not a physical gate. Dynamic circuits enable mid-circuit measurement (Q9), reset (Q11), and classical feedback (Q10).
+
+\textbf{Google Willow} (superconducting transmon): The fSim($\theta,\phi$) gate family natively implements Q3 \textit{and} Q8 simultaneously---the interaction Hamiltonian between coupled transmons naturally produces an fSim evolution. This is a form of multi-computation: one calibrated pulse yields both swap-like (Q3) and phase-like (Q2) effects.
+
+\textbf{IonQ Forte} (trapped ions, $^{171}$Yb): The M\o lmer-S\o rensen gate XX($\theta$) provides a continuously parameterized entangling gate (Q3$+$Q5 in one operation). \textbf{All-to-all connectivity}---any qubit can interact with any other without SWAP overhead. This eliminates the routing problem entirely.
+
+\textbf{Quantinuum H2} (trapped ions, QCCD): ZZPhase($\theta$) as native entangling gate. All-to-all logical connectivity via ion shuttling. Highest reported 2-qubit gate fidelity: $99.8$--$99.9\%$. Full support for mid-circuit measurement, reset, and classical feedback.
+
+\textbf{Xanadu} (photonic, continuous-variable): Fundamentally different paradigm. Squeezing and beam splitters natively implement Q3 and Q8 in continuous-variable mode. Measurement is photon detection (destructive). Entanglement via two-mode squeezing is native.
+
+\textbf{Neutral atoms} (QuEra/Pasqal, Rydberg): CZ gate via Rydberg blockade natively implements Q3. Crucially, the Rydberg interaction \textit{naturally extends to multi-qubit gates}: CCZ (Toffoli-equivalent) is native without decomposition, unlike all other platforms. Global rotations implement Q1 and Q7 simultaneously for all qubits.
+
+\subsection{The SWAP Problem = Transition Minimization}
+
+On platforms without all-to-all connectivity (IBM, Google, neutral atoms), two-qubit gates between non-adjacent qubits require SWAP gate insertion. Each SWAP costs 3 entangling gates. This is structurally identical to ADC/DAC transition minimization in classical analog-digital compilation~\cite{bieg_primes}:
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+& Classical & Quantum \\
+\midrule
+Ideal & Fully connected analog & Fully connected qubits \\
+Physical & Fixed wiring topology & Hardware coupling map \\
+Transition & ADC/DAC (${\sim}100$ fJ) & SWAP (3 entangling gates) \\
+Cost & Quantization noise & Gate infidelity \\
+Minimization & NP-hard (heuristic) & NP-hard (SABRE~\cite{sabre}) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Ion trap platforms (IonQ, Quantinuum) avoid this entirely via all-to-all connectivity---the quantum equivalent of an ideal fully-connected analog chip.
+
+\section{Quantum Multi-Computation}
+\label{sec:multicomp}
+
+\subsection{Information Utilization}
+
+A single projective measurement of $n$ qubits yields $n$ classical bits from a state containing $4^n - 1$ real parameters. The information utilization is:
+\begin{equation}
+\eta_{\text{quantum}} = \frac{n}{4^n - 1} \xrightarrow{n \to \infty} 0
+\end{equation}
+
+For $n = 10$: $\eta = 10 / 1{,}048{,}575 \approx 0.001\%$.
+
+This is \textit{worse} than the classical analog case~\cite{bieg_multi}, where a single sMTJ race over $N = 1024$ elements extracts $\log_2(1024) = 10$ bits from $\log_2(1024!) \approx 8530$ bits, giving $\eta = 0.12\%$.
+
+\begin{remark}
+Quantum mechanics is simultaneously the most information-rich description of nature (exponential Hilbert space) and the most restrictive in information extraction (measurement collapse, no-cloning). Multi-computation is therefore both more valuable and more constrained in the quantum setting.
+\end{remark}
+
+\subsection{Classical Shadows = Quantum Multi-Computation}
+
+Classical shadow tomography~\cite{shadows} resolves this waste. By applying random unitaries before measurement, a dataset of $T$ random measurements yields predictions for $M$ observables using only $T = O(\log M)$ copies:
+\begin{equation}
+T = O\!\left(\frac{\log M \cdot \max_i \|O_i\|^2_{\text{shadow}}}{\epsilon^2}\right)
+\end{equation}
+
+The $\log M$ scaling is the key: information extraction grows \textit{exponentially} relative to measurement cost. This is the quantum analog of the classical multi-computation principle~\cite{bieg_multi}: extract all observables from the physics you are already paying for.
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+& Classical (sMTJ race) & Quantum (shadows) \\
+\midrule
+Single event output & 1 winner index & $n$ bits \\
+Available information & $\log_2(N!)$ bits & $4^n - 1$ parameters \\
+Utilization (naive) & 0.12\% & 0.001\% \\
+Multi-computation & 5 observables / race & $M$ from $O(\log M)$ \\
+Key technique & Read all spike times & Random bases \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Other Quantum Multi-Computation Instances}
+
+\textbf{QEC syndromes}: A single syndrome measurement round simultaneously identifies the error, confirms logical state integrity, and provides noise channel statistics---at least 3 useful outputs from one operation.
+
+\textbf{Pauli grouping}: Commuting Pauli operators can be measured simultaneously. For molecular Hamiltonians with $N$ qubits, this reduces measurement circuits from $O(N^4)$ to $O(N^2)$ or better~\cite{pauli_grouping}.
+
+\textbf{Randomized benchmarking}: A single RB protocol simultaneously extracts gate fidelity, error per Clifford, SPAM error rates, coherence information, and leakage rates---5$+$ quantities from one experiment~\cite{rb}.
+
+\section{The Unified Framework}
+\label{sec:unified}
+
+The classical computational primes~\cite{bieg_primes} and quantum primes form a single meta-framework:
+
+\begin{table}[h]
+\centering
+\caption{The unified prime framework across three computational domains.}
+\label{tab:unified}
+\footnotesize
+\begin{tabular}{llll}
+\toprule
+Role & Classical Prime & Quantum Prime & Structural \\
+\midrule
+Aggregation & P1 ($\Sigma$) & Q1 (Superposition) & Many $\to$ one \\
+Scaling & P2 ($\times c$) & Q2 (Phase Enc.) & Multiplicative mod. \\
+Correlation & P11 ($\times$) & Q3 (Entanglement) & Joint state creation \\
+Selection & P5 (argmax) & Q4 (Controlled) & Conditional routing \\
+Activation & P6 ($\sigma$) & Q5 (Param.\ Rotation) & Continuous nonlin. \\
+Inversion & P12 ($1/x$) & Q6 (Reflection) & Reference-based inv. \\
+Domain change & P3/P4 ($e^x$/ln) & Q7 (Basis Transform) & Conjugate repr. \\
+Dynamics & P8 ($\int$) & Q8 (Ham.\ Evolution) & Time integration \\
+Collapse & P7 ($\theta$) & Q9 (Measurement) & Binary decision \\
+Gradient & P9 ($d/dt$) & Q10 (Classical FB) & Adaptive control \\
+Entropy & P10 ($\xi$) & Q11 (Reset) & Entropy management \\
+--- & --- & Q12 (Post-Selection) & \textit{Quantum-only} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+11 of 12 primes have exact structural analogs across classical and quantum domains. The sole exception---Q12 (Post-Selection)---is genuinely quantum: it enables effective non-linear state transformations from linear quantum mechanics, placing PostBQP $=$ PP strictly beyond classical computation.
+
+This structural correspondence suggests a deeper principle: \textit{computation, whether classical-analog, classical-digital, or quantum, decomposes into the same set of functional roles}. The primes differ in their physical realization but not in their computational purpose.
+
+\section{Related Work}
+
+\textbf{Quantum compilers.} Qiskit~\cite{qiskit}, Cirq~\cite{cirq}, and tket~\cite{tket} use universal gate sets as their intermediate representation. BQSKit~\cite{bqskit} performs numerical synthesis of optimal circuits per hardware target but lacks hardware-agnostic primitives. PyZX~\cite{pyzx} uses ZX-calculus as a graphical IR---the closest existing work to a principled intermediate representation, but defined by graphical rewrite rules rather than computational roles.
+
+\textbf{Gate classification.} The Weyl chamber~\cite{weyl} classifies two-qubit gates by their entangling power, providing a geometric taxonomy. The KAK decomposition decomposes arbitrary two-qubit unitaries into at most 3 applications of a base gate plus single-qubit rotations. These classify \textit{gates}, not \textit{computational roles}---they would group Grover's oracle and a QFT butterfly together if they happen to have similar entangling power.
+
+\textbf{Classical shadows.} Huang, Kueng, and Preskill~\cite{shadows} demonstrated that $O(\log M)$ random measurements suffice to predict $M$ observables. Follow-up work on derandomized shadows~\cite{derandomized} and locally-biased shadows improved practical efficiency. Our contribution is connecting this to the multi-computation design principle from analog computing.
+
+\textbf{Classical computational primes.} Our prior work~\cite{bieg_primes} introduced 12 irreducible classical operations for analog-digital partitioning, applied to 107 neural network algorithms. The present paper extends this to quantum computing and identifies the structural isomorphism between the two frameworks.
+
+\section{Discussion}
+
+\subsection{What Quantum Primes Enable}
+
+\textbf{Structure-preserving compilation.} Current compilers destroy algorithmic structure: a QFT becomes CNOT soup. Quantum primes preserve structure by compiling at the role level: Q7 (Basis Transform) maps to the platform's native QFT or Hadamard implementation, retaining the semantic information that this is a Fourier transform.
+
+\textbf{Cross-platform comparison.} Given an algorithm's prime decomposition, one can immediately assess which platform provides the most native coverage. Example: VQE = \{Q3, Q5, Q7, Q8, Q9, Q10\}. Platforms where Q8 (Hamiltonian Evolution) is native (Google fSim, IonQ XX, neutral atom Rydberg) have a structural advantage over platforms where Q8 must be decomposed (IBM, which Trotterizes).
+
+\textbf{Routing-free platforms.} IonQ and Quantinuum provide all-to-all connectivity, eliminating SWAP overhead. In the prime framework, this means Q3 (Entanglement) and Q4 (Controlled Conditionality) have zero transition cost between any pair of qubits---the quantum equivalent of a fully-connected analog chip.
+
+\subsection{Limitations}
+
+\textbf{Not a gate set.} Quantum primes are \textit{not} a universal gate set in the Solovay-Kitaev sense. They are a classification of computational roles. A compiler using quantum primes still needs a gate-level backend for each hardware target.
+
+\textbf{Granularity.} The prime decomposition operates at the level of computational subroutines (QFT, Grover oracle), not individual gates. This is by design---the value is in preserving algorithmic structure, not in gate-level optimization. Gate-level optimization is handled by existing tools (tket, Qiskit) after prime-level compilation.
+
+\textbf{Continuous gates.} The boundary between Q2 (Phase Encoding) and Q5 (Parameterized Rotation) is not always sharp. A parameterized phase gate $R_z(\theta)$ could be classified as either. We classify based on role: if $\theta$ is data-dependent (encoding information), it is Q2; if $\theta$ is optimized (variational), it is Q5.
+
+\section{Conclusion}
+
+We have introduced 12 quantum primes---irreducible quantum computational primitives defined by their functional role rather than their matrix representation. The framework enables structure-preserving, hardware-agnostic quantum compilation, with principled mapping to 6 hardware platforms.
+
+The structural isomorphism between classical primes (P1--P12) and quantum primes (Q1--Q12) suggests a deeper unity: computation decomposes into the same 11 functional roles regardless of physical substrate, with one genuinely quantum role (Q12, Post-Selection) that has no classical counterpart.
+
+Combined with our prior work on classical analog-digital partitioning~\cite{bieg_primes} and multi-computation~\cite{bieg_multi}, this yields a unified meta-framework for compilation across all three computational paradigms: classical analog, classical digital, and quantum.
+
+Code and the full factorization table are available at: \url{https://github.com/Biech95/prime-compiler}.
+
+\begin{thebibliography}{20}
+
+\bibitem{shadows} H.-Y.~Huang, R.~Kueng, J.~Preskill, ``Predicting many properties of a quantum state from very few measurements,'' \textit{Nature Physics} 16, 1050--1057, 2020.
+
+\bibitem{bieg_primes} M.~Bieg, ``Computational Primes: A systematic framework for partitioning neural network computation across analog and digital domains,'' \textit{Preprint}, 2026.
+
+\bibitem{bieg_multi} M.~Bieg, ``Multi-computation from exponential race events: Extracting simultaneous observables from stochastic barrier arrays,'' \textit{Preprint}, 2026.
+
+\bibitem{bieg_sba} M.~Bieg, ``Stochastic Barrier Attention: Normalization-free softmax sampling via thermodynamic race processes,'' \textit{Preprint}, 2025.
+
+\bibitem{solovay} C.~M.~Dawson and M.~A.~Nielsen, ``The Solovay-Kitaev algorithm,'' \textit{Quantum Information \& Computation} 6(1), 81--95, 2006.
+
+\bibitem{sabre} G.~Li, Y.~Ding, Y.~Xie, ``Tackling the qubit mapping problem for NISQ-era quantum devices,'' \textit{ASPLOS}, 2019.
+
+\bibitem{pauli_grouping} V.~Verteletskyi, T.-C.~Yen, A.~F.~Izmaylov, ``Measurement optimization in the VQE using a minimum clique cover,'' \textit{J.\ Chem.\ Phys.}\ 152, 124114, 2020.
+
+\bibitem{rb} T.~Proctor \textit{et al.}, ``Measuring the capabilities of quantum computers,'' \textit{Nature Physics} 18, 75--79, 2022.
+
+\bibitem{derandomized} H.-Y.~Huang, R.~Kueng, J.~Preskill, ``Efficient estimation of Pauli observables by derandomization,'' \textit{Phys.\ Rev.\ Lett.}\ 127, 030503, 2021.
+
+\bibitem{qiskit} Aleksandrowicz \textit{et al.}, ``Qiskit: An open-source framework for quantum computing,'' \textit{Zenodo}, 2019.
+
+\bibitem{cirq} Cirq Developers, ``Cirq: A Python framework for creating, editing, and invoking NISQ circuits,'' 2021.
+
+\bibitem{tket} S.~Sivarajah \textit{et al.}, ``tket: A retargetable compiler for NISQ devices,'' \textit{Quantum Sci.\ Technol.}\ 6(1), 014003, 2021.
+
+\bibitem{bqskit} A.~Patel \textit{et al.}, ``BQSKit: A flexible quantum compiler framework,'' \textit{ACM TQCE}, 2022.
+
+\bibitem{pyzx} A.~Kissinger and J.~van de Wetering, ``PyZX: Large scale automated diagrammatic reasoning,'' \textit{EPTCS} 318, 2020.
+
+\bibitem{weyl} J.~Zhang \textit{et al.}, ``Geometric theory of nonlocal two-qubit operations,'' \textit{Phys.\ Rev.\ A} 67, 042313, 2003.
+
+\bibitem{google_qec} Google Quantum AI, ``Suppressing quantum errors by scaling a surface code logical qubit,'' \textit{Nature} 614, 676--681, 2023.
+
+\bibitem{harvard_atoms} D.~Bluvstein \textit{et al.}, ``Logical quantum processor based on reconfigurable atom arrays,'' \textit{Nature} 626, 58--65, 2024.
+
+\bibitem{quantinuum_h2} S.~A.~Moses \textit{et al.}, ``A race-track trapped-ion quantum processor,'' \textit{Phys.\ Rev.\ X} 13, 041052, 2023.
+
+\bibitem{shadow_review} A.~Elben \textit{et al.}, ``The randomized measurement toolbox,'' \textit{Nature Reviews Physics} 5, 9--24, 2023.
+
+\bibitem{ionq} K.~Wright \textit{et al.}, ``Benchmarking an 11-qubit quantum computer,'' \textit{Nature Communications} 10, 5464, 2019.
+
+\end{thebibliography}
+
+\end{document}
